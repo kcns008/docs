@@ -1,4 +1,4 @@
-## Openshift Cluster Spin up and Kubeshark Deployment 
+## Create Openshift Cluster on AWS and Kubeshark Deployment 
 
 
 #### install rosa from https://console.redhat.com/openshift/downloads Based on you PC download tar and move to PATH / bin folder
