@@ -58,13 +58,8 @@ oc login https://api.kubeshark.ABC1.p1.openshiftapps.com:6443 --username cluster
 oc get nodes
 ```
 
-#### Now Prepare `default` namespace in Openshift cluster for Kubeshare by allowing kubeshark POD spinup will `privileged` and `anyuid` SCC by assigning those SCC to SA `default` and `kubeshark-service-account`
-```shell
-oc adm policy add-scc-to-user privileged -z default -n default
-```
-```shell
-oc adm policy add-scc-to-user anyuid -z default -n default
-```
+#### Now Prepare `default` namespace in Openshift cluster for Kubeshare by allowing kubeshark POD spinup will `privileged` and `anyuid` SCC by assigning those SCC to `kubeshark-service-account`
+
 ```shell
 oc adm policy add-scc-to-user privileged -z kubeshark-service-account -n default
 ```
