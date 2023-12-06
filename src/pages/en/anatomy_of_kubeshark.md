@@ -5,70 +5,111 @@ layout: ../../layouts/MainLayout.astro
 mascot: Bookworm
 ---
 
-Distributed packet capture with minimal footprint, built for large scale production clusters.
+**A distributed packet capture system with a minimal footprint, designed for large-scale production clusters.**
 
 ![Anatomy of **Kubeshark**](/diagram.png)
 
-**Kubeshark** supports two main deployment methods:
-1. On-demand lightweight traffic investigation using a [CLI](/en/install#cli), by anyone with [kubectl](https://kubernetes.io/docs/reference/kubectl/) access.
-2. Long living deployment, using a [helm chart](/en/install#helm), in support of multiple use-cases (e.g. collaborative debugging, network monitoring, telemetry and forensics).
+**Kubeshark** offers two primary deployment methods:
 
-**Kubeshark** requires no prerequisites like: CNI, service-mesh or coding. It doesn't use a proxy or a sidecar and doesn't require architecture alterations to function. The CLI option can get your K8s traffic investigation going in only a few minutes.
+1. On-demand, lightweight traffic investigation accessible through a [CLI](/en/install#cli) for anyone with [kubectl](https://kubernetes.io/docs/reference/kubectl/) access.
+2. Long-term deployment via a [helm chart](/en/install#helm), providing stable and secure access to developers without the need for `kubectl` access.
 
-**Kubeshark** comprises four software components that seamlessly integrate with one another:
+**Kubeshark** does not require any prerequisites such as CNI, service mesh, or coding. It functions without the need for a proxy or sidecar, and does not necessitate any changes to existing architecture.
+
+**Kubeshark** is comprised of four software components that integrate seamlessly:
 
 ## CLI
 
-The CLI is a binary distribution of the **Kubeshark** client and it is written in [Go](https://go.dev/) language. It is an optional component that offers a lightweight on-demand option to use **Kubeshark** that doesn't leave any permanent footprint.
+The CLI, a binary distribution of the Kubeshark client, is written in the [Go](https://go.dev/) language. It is an optional component that offers a lightweight on-demand option to use **Kubeshark** that doesn't leave any permanent footprint.
 
-Once downloaded, simply use the `tap` command to start seeing cluster-wide API traffic:
+Once downloaded, you can simply use the `tap` command to begin monitoring cluster-wide API traffic:
 
 ```shell
 kubeshark tap                                       - tap all pods in all namespaces
 kubeshark tap -n sock-shop "(catalo*|front-end*)"   - tap only pods that match the regex in a certain namespace
 ```
 
+## Cluster Architecture
+
+![Full Architecture](/full-architecture.png)
+
+Workers are deployed, one per node, at the node level, to sniff traffic and listen to requests on port `8897` on each node.
+
+The Hub is a single container deployed at the Control Plane level. It consolidates information received from all the Workers and listens to requests on port `8898`.
+
+The Front is a single container deployed at the Control Plane level. It communicates with the Hub to receive consolidated information and serves the dashboard. It listens to requests on port `8899`.
+
+> All ports are configurable.
+
 ## The Dashboard
 
-**Kubeshark**'s dashboard is a [React](https://reactjs.org/) application packaged as a K8s deployment. It operates on the K8s control plane and communicates with the [**Hub**](#hub) via WebSocket, displaying captured traffic in real-time as a scrolling feed.
+**Kubeshark**'s dashboard is a [React](https://reactjs.org/) application packaged as a Kubernetes (K8s) deployment. It operates within the K8s control plane and communicates with the [**Hub**](#hub) via WebSocket, displaying captured traffic in real-time as a scrolling feed.
 
 ![Kubeshark UI](/kubeshark-ui.png)
 
-**Service name:** `kubeshark-front`
+**Service Name**: `kubeshark-front`
 
-> **NOTE:** Read more in the [dashboard](/en/ui) section.
+> **NOTE:** For more information, refer to the [dashboard documentation](/en/ui).
 
 ## Hub
 
-The **Hub** is a K8 deployment that serves as a gateway to the [**Workers**](#worker). It hosts an HTTP server and fulfills the following functions:
+The **Hub** is a Kubernetes deployment that acts as a gateway to the [**Workers**](#worker). It hosts an HTTP server and performs several key functions:
 
-- Accepting WebSocket connections and their accompanying filters.
-- Establishing new WebSocket connections to the workers.
-- Receiving dissected traffic from the workers.
-- Streaming results back to the requester.
-- Configuring worker states through HTTP calls.
+- Accepting WebSocket connections along with their respective filters.
+- Establishing WebSocket connections to the Workers.
+- Receiving processed traffic from the Workers.
+- Streaming results back to the requestors.
+- Managing Worker states via HTTP requests.
 
-**Service name:** `kubeshark-hub`
+**Service Name**: `kubeshark-hub`
 
 ## Worker
 
-The worker is deployed into your cluster as a [DaemonSet](https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/) to ensure that each node in your cluster is covered by Kubeshark.
+Each Worker pod is deployed into your cluster at the node level as a [DaemonSet](https://kubernetes.io/docs/concepts/workloads/controllers/daemonset/).
 
-This worker encompasses two services: 
+Each Worker pod includes two services:
 
-1. A network sniffer
-2. A kernel tracer
+1. Sniffer: A network packet sniffer.
+2. Tracer: An optional kernel tracer.
 
-It captures packets from all network interfaces, reassembles TCP streams, and if they are dissectable, stores them as [PCAP](https://datatracker.ietf.org/doc/id/draft-gharris-opsawg-pcap-00.html) files. The collected traffic is then transmitted to the [**Hub**](#hub) via WebSocket connections.
+![Worker's Architecture](/worker-architecture.png)
 
-**Kubeshark** stores raw packets and dissects them on-demand upon [filtering](/en/filtering).
+### Sniffer
 
-**Name:** `kubeshark-worker-daemon-set-<id>`
+The Sniffer is the main container in the Worker pod responsible for capturing packets by one of the available means.
+
+#### AF_PACKET
+
+AF_PACKET is a socket type in the Linux socket API that provides direct access to network packets at the link-layer level.
+
+Kubeshark uses this library to request packets from the Linux kernel. Availability of this library is very common among Linux kernels.
+
+#### PF_RING
+
+PF_RING is a high-speed packet capture and processing framework. It supports various packet capture methods, including kernel bypass techniques. PF_RING aims to overcome the limitations of the traditional Linux networking stack, offering acceleration mechanisms for high-speed packet capture and analysis. It is frequently used in high-performance scenarios.
+
+PF_RING knows when it is available via a kernel module.
+
+### Tracer
+
+Kubeshark can sniff [encrypted traffic (TLS)](https://en.wikipedia.org/wiki/Transport_Layer_Security) in your cluster using eBPF **without actually doing decryption**. It hooks into entry and exit points in certain functions inside the [OpenSSL](https://www.openssl.org/) library and Go's [crypto/tls](https://pkg.go.dev/crypto/tls) package.
+
+Kubeshark offers tracing of kernel-space and user-space functions using [eBPF](https://prototype-kernel.readthedocs.io/en/latest/bpf/) (Extended Berkeley Packet Filter). eBPF is an in-kernel virtual machine running programs passed from user space, first introduced into the Linux kernel with version 4.4 and has matured since then.
+
+This functionality is performed by the Tracer container. Tracer deployment is optional and can be enabled and disabled using the `tap.tls` configuration value. When set to `false`, Tracer won't get deployed.
+
+> Read more about TLS/eBPF capabilities in the [eBPF & Encryption](/en/encrypted_traffic) section.
 
 ### Distributed PCAP-based Storage
 
-Kubeshark uses a distributed PCAP-based storage where each of the Workers store the captured L4 streams in the root file system of the node.
+Kubeshark employs distributed PCAP-based storage, with each Worker storing captured Layer 4 (L4) streams in the root file system of its node.
+
+Each Worker Pod captures packets from all network interfaces, reassembles TCP streams, and, if dissectable, temporarily stores them as [PCAP](https://datatracker.ietf.org/doc/id/draft-gharris-opsawg-pcap-00.html) files. The traffic collected is then transmitted to the [**Hub**](#hub) via WebSocket.
+
+**Kubeshark** temporarily stores raw packets and dissects them on-demand based on [filtering criteria](/en/filtering). Storage is controlled by the `tap.storageLimit` property. This property indirectly controls the time-window the packet is available for viewing.
+
+**Service Name**: `kubeshark-worker-daemon-set-<id>`
 
 ### Low Network Overhead
 
-To reduce potential network overhead, only a fraction of the traffic is sent over the network upon request.
+To minimize potential network overhead, only a selected portion of the traffic is sent over the network upon request.

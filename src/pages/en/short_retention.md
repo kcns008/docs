@@ -8,9 +8,9 @@ layout: ../../layouts/MainLayout.astro
 
 ![Error Message](/storage_error.png)
 
-> For information on long-term traffic retention, read the [Traffic Recording & Offline Analysis](/en/cloud_forensics) section.
+> For information on long-term traffic retention, read the [Traffic Recorder](/en/traffic_recorder) section.
 
-## Guardrails: Hard Limit & Soft Limit
+## Storage Limit & Guardrails
 
 Because storage can fill up rapidly, we have established certain guardrails to prevent overuse of disk resources.
 
@@ -18,6 +18,6 @@ The storage limitation is regulated by the `tap.storagelimit` configuration valu
 
 To increase this limit, simply provide a different value (e.g., setting it to 1GB with `--set tap.storagelimit=1Gi`).
 
-### Soft Limit
+When an L4 stream is dissected, a JSON file is generated with all relevant details. This file has a time to live of 5 minutes.
 
-To avoid eviction, the Worker continuously monitors the storage size and purges it once it reaches 50% of the hard limit (based on the aforementioned configuration value).
+The actual L4 stream (PCAP) has a time to live of 10 seconds, enough for a script to copy it to a different folder if retention is required.
